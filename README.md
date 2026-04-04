@@ -1,62 +1,37 @@
 # AI Agent Sandbox
 
-A comprehensive security sandbox and runtime environment for AI agents. Monitor and control system interactions (file access, network calls, process execution, secrets) through YAML-based policies.
+Runtime security sandbox for AI agents. Intercepts file access, network calls, process execution, and secret usage through YAML-based policies. Think of it as a firewall for what your AI agents can do on a system.
 
-## Features
+Built this after watching too many LangChain demos where the agent had unrestricted filesystem access. Cool demo, terrible idea in production. This wraps any Python-based agent with policy enforcement so you can actually control what it touches.
 
-- **Policy Engine**: YAML-based policies defining allowed/denied operations
-- **Real-time Monitoring**: Track all agent activities with structured logging
-- **Multiple Interceptors**: File, network, process, and secret access control
-- **Audit Trail**: Complete JSON audit log of all sandbox events
-- **Web Dashboard**: Flask-based real-time monitoring interface
-- **LangChain Integration**: Drop-in wrapper for LangChain tools
-- **Built-in Policy Templates**: Restrictive, permissive, and web-agent policies
-- **CLI Interface**: Easy-to-use command-line tools
+## How it works
 
-## Architecture
+Your agent code runs inside a sandbox runtime that checks every operation against a YAML policy:
 
 ```
-┌─────────────────────────────┐
-│   AI Agent Code             │
-└──────────────┬──────────────┘
-               │
-┌──────────────▼──────────────┐
-│  Sandbox Runtime            │
-│  (Decorator/Context Mgr)    │
-└──────────────┬──────────────┘
-               │
-       ┌───────┼────────┬────────────┬─────────────┐
-       │       │        │            │             │
-   ┌───▼─┐ ┌──▼──┐ ┌───▼───┐ ┌─────▼────┐ ┌─────▼────┐
-   │File │ │Net  │ │Process│ │Secrets   │ │Resource  │
-   │     │ │     │ │       │ │Mgr       │ │Limits    │
-   └─────┘ └─────┘ └───────┘ └──────────┘ └──────────┘
-       │       │        │            │             │
-       └───────┼────────┴────────────┴─────────────┘
-               │
-       ┌───────▼──────────┐
-       │  Audit Logger    │
-       │  (JSON format)   │
-       └──────────────────┘
+Agent code
+  └── Sandbox runtime (decorator or context manager)
+        ├── File interceptor      (read/write/delete)
+        ├── Network interceptor   (HTTP, DNS)
+        ├── Process interceptor   (subprocess calls)
+        ├── Secrets interceptor   (env vars, tokens)
+        └── Resource limiter      (memory, timeout, ops count)
+              └── Audit logger (JSON)
 ```
 
-## Installation
+Everything gets logged. Violations get blocked and flagged.
+
+## Install
 
 ```bash
-# Clone and install
-git clone <repo>
+git clone https://github.com/bastiaan365/ai-agent-sandbox.git
 cd ai-agent-sandbox
 pip install -e .
 ```
 
-Or via pip:
-```bash
-pip install ai-agent-sandbox
-```
+## Quick start
 
-## Quick Start
-
-### 1. Run Agent in Sandbox
+### As a decorator
 
 ```python
 from sandbox.core.runtime import SandboxRuntime
@@ -64,64 +39,55 @@ from sandbox.policies.defaults import RESTRICTIVE_POLICY
 
 runtime = SandboxRuntime(policy_dict=RESTRICTIVE_POLICY)
 
-# Wrap your agent function
 @runtime.sandboxed(timeout=30)
 def my_agent():
-    # Your agent code
-    with open('/tmp/allowed.txt', 'w') as f:
-        f.write('Hello')
-    return "Done"
-
-result = my_agent()
+    with open('/tmp/output.txt', 'w') as f:
+        f.write('this is allowed')
+    # trying to read /etc/shadow would get blocked
+    return "done"
 ```
 
-### 2. Use CLI
+### CLI
 
 ```bash
-# Validate a policy file
+# validate a policy
 sandbox validate policies/restrictive.yaml
 
-# Run agent with policy
-sandbox run --policy policies/restrictive.yaml my_script.py
+# run a script under policy
+sandbox run --policy policies/restrictive.yaml agent_script.py
 
-# Start monitoring dashboard
+# start monitoring dashboard
 sandbox monitor --port 5000
 
-# View audit trail
+# view audit trail
 sandbox audit --limit 50
 ```
 
-### 3. LangChain Integration
+### LangChain integration
 
 ```python
 from sandbox.adapters.langchain import SandboxedLangChainTools
-from langchain.agents import Tool
 
-tools = [
-    Tool(name="read_file", func=read_file_func, description="Read file"),
-]
-
-sandboxed_tools = SandboxedLangChainTools(
-    tools=tools,
+sandboxed = SandboxedLangChainTools(
+    tools=my_langchain_tools,
     policy_file="policies/web_agent.yaml"
 )
-
-# Now tools are sandboxed!
-agent.tools = sandboxed_tools.get_tools()
+agent.tools = sandboxed.get_tools()
 ```
 
-## Policy Format
+Drop-in replacement — your existing tools work the same, just with policy enforcement around them.
 
-Policies are YAML files defining what agents can do:
+## Policy format
+
+Policies are YAML files that define what's allowed:
 
 ```yaml
 metadata:
   name: "web_agent"
   version: "1.0"
-  description: "Policy for web browsing agents"
 
 filesystem:
-  max_file_size: 10485760  # 10MB
+  max_file_size: 10485760
   allowed_paths:
     - "/tmp/**"
     - "/home/user/downloads/**"
@@ -131,153 +97,71 @@ filesystem:
 
 network:
   allowed_hosts:
-    - "api.example.com"
+    - "api.openai.com"
     - "*.github.com"
   denied_hosts:
     - "*.internal.corp"
-  allowed_ports: [80, 443]
 
 processes:
-  allowed_commands:
-    - "curl"
-    - "python"
-  denied_commands:
-    - "rm"
-    - "dd"
-    - "mkfs"
+  allowed_commands: ["curl", "python"]
+  denied_commands: ["rm", "dd", "mkfs"]
 
 secrets:
-  protected_vars:
-    - "API_KEY"
-    - "PASSWORD"
-    - "TOKEN"
+  protected_vars: ["API_KEY", "PASSWORD", "TOKEN"]
 
 resources:
   max_memory_mb: 512
   max_timeout_seconds: 60
-  max_file_ops: 1000
 ```
 
-## Policy Templates
+Three built-in templates: **restrictive** (default, very locked down), **permissive** (more room for general tasks), and **web_agent** (tuned for browsing/API agents).
 
-### Restrictive (Default)
-- Only read-only file access to whitelisted paths
-- No network access
-- No subprocess execution
-- No secret access
-- 30-second timeout
+## Monitoring
 
-### Permissive
-- Read/write to `/tmp` and user home
-- Limited network (common APIs)
-- Subprocess execution for safe commands
-- Some environment variable access
-- 5-minute timeout
+The Flask dashboard at `localhost:5000` shows live agent activity — execution status, policy violations, file access, network requests, and resource usage.
 
-### Web Agent
-- Read/write to temp/downloads
-- Network access to common APIs (GitHub, OpenAI, etc.)
-- curl/wget for HTTP
-- No filesystem deletion
-- 2-minute timeout
+Audit logs are structured JSON, filterable by event type:
 
-## Monitoring & Audit
-
-### Real-time Dashboard
 ```bash
-sandbox monitor --port 5000
-# Visit http://localhost:5000
-```
-
-Shows:
-- Agent execution status
-- Policy violations in real-time
-- Network requests
-- File access patterns
-- Resource usage
-
-### Audit Log
-```bash
-# View last 50 events
-sandbox audit --limit 50
-
-# View violations only
 sandbox audit --filter violation
-
-# Export to file
 sandbox audit --output audit.json
 ```
 
-## Examples
+## Project layout
 
-See `/examples/` directory:
-- `basic_sandbox.py`: Simple file/network operations
-- `langchain_example.py`: Integration with LangChain agents
-
-Run examples:
-```bash
-python examples/basic_sandbox.py
 ```
-
-## Testing
-
-```bash
-pytest tests/
-pytest tests/test_policy.py -v
-pytest tests/test_interceptors.py -v
+sandbox/
+├── core/
+│   ├── runtime.py      # Main sandbox entry point
+│   ├── policy.py       # YAML policy parsing + matching
+│   └── interceptors/   # File, network, process, secrets
+├── adapters/
+│   └── langchain.py    # LangChain tool wrapper
+├── dashboard/          # Flask monitoring UI
+├── policies/           # Built-in templates
+└── audit/              # JSON logging
+tests/
+examples/
 ```
-
-## Architecture Details
-
-### Runtime
-- Entry point for sandboxing
-- Applies policy to execution context
-- Manages interceptor lifecycle
-- Handles timeout and resource limits
-
-### Policy Engine
-- Parses YAML policies
-- Glob pattern matching for paths
-- Validates requests against rules
-- Caches compiled rules
-
-### Interceptors
-- **FileSystem**: `open()`, path traversal, size limits
-- **Network**: HTTP/DNS requests, host/port filtering
-- **Process**: `subprocess`, dangerous commands
-- **Secrets**: Environment variable filtering
-
-### Audit Logger
-- Structured JSON logging
-- Timestamps and request IDs
-- Violation flagging
-- Searchable event database
-
-## Security Considerations
-
-1. **Not a Container**: This is NOT a full OS-level sandbox. It's for policy enforcement at the application level.
-2. **Python-Only**: Interception works for Python code. Native C extensions may bypass.
-3. **Defense in Depth**: Use alongside OS-level controls (containers, VMs) for high-risk agents.
-4. **Policy Validation**: Always validate policies before deployment.
 
 ## Limitations
 
-- Does not prevent all side channels
-- No protection against timing attacks
-- Resource limits are approximate
-- Cannot prevent all subprocess escapes
+This is **application-level** policy enforcement, not OS-level sandboxing. It intercepts Python calls — native C extensions could bypass it. For high-risk agents, use this alongside containers or VMs as part of a defense-in-depth setup.
 
-## Contributing
+Resource limits are approximate. Timing attacks and side channels are not addressed.
 
-Contributions welcome! Please:
-1. Add tests for new features
-2. Update documentation
-3. Follow black/isort formatting
+## Tests
+
+```bash
+pytest tests/ -v
+pytest tests/test_interceptors.py -v
+```
+
+## Related
+
+- [LLM Red Team Toolkit](https://github.com/bastiaan365/llm-red-team-toolkit) — offensive testing for LLM apps
+- [MCP IT Ops](https://github.com/bastiaan365/mcp-it-ops) — MCP server where this kind of sandboxing would be useful
 
 ## License
 
-MIT License - see LICENSE file
-
-## Support
-
-Issues and questions: GitHub Issues
+MIT
