@@ -1,0 +1,42 @@
+metadata:
+  name: "restrictive"
+  version: "1.0"
+  description: "Highly restrictive sandbox policy for untrusted agents"
+
+filesystem:
+  max_file_size: 1048576  # 1MB
+  allowed_paths:
+    - "/tmp/**"
+  denied_paths:
+    - "/etc/**"
+    - "/root/**"
+    - "/home/**"
+
+network:
+  allowed_hosts: []
+  denied_hosts: []
+  allowed_ports: []
+  denied_ports: []
+
+processes:
+  allowed_commands: []
+  denied_commands:
+    - "rm"
+    - "dd"
+    - "mkfs"
+    - "shutdown"
+    - "reboot"
+
+secrets:
+  protected_vars:
+    - "*API*"
+    - "*KEY*"
+    - "*TOKEN*"
+    - "*SECRET*"
+    - "*PASSWORD*"
+
+resources:
+  max_memory_mb: 256
+  max_timeout_seconds: 30
+  max_file_ops: 100
+  max_network_requests: 0

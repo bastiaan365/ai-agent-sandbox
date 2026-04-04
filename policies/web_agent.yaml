@@ -1,0 +1,55 @@
+metadata:
+  name: "web_agent"
+  version: "1.0"
+  description: "Policy for web browsing and API agents"
+
+filesystem:
+  max_file_size: 52428800  # 50MB
+  allowed_paths:
+    - "/tmp/**"
+    - "/home/**/.cache/**"
+  denied_paths:
+    - "/etc/**"
+    - "/root/**"
+
+network:
+  allowed_hosts:
+    - "*.github.com"
+    - "*.openai.com"
+    - "api.openai.com"
+    - "*.googleapis.com"
+    - "*.aws.amazon.com"
+    - "*.stripe.com"
+    - "*.discord.com"
+    - "*.example.com"
+    - "localhost"
+  denied_hosts:
+    - "*.internal.*"
+    - "192.168.*"
+    - "10.0.*"
+  allowed_ports: [80, 443]
+  denied_ports: []
+
+processes:
+  allowed_commands:
+    - "curl"
+    - "wget"
+    - "python*"
+  denied_commands:
+    - "rm"
+    - "dd"
+    - "mkfs"
+    - "sudo"
+
+secrets:
+  protected_vars:
+    - "AWS_*"
+    - "GCP_*"
+    - "*_SECRET"
+    - "*_PASSWORD"
+
+resources:
+  max_memory_mb: 512
+  max_timeout_seconds: 120
+  max_file_ops: 1000
+  max_network_requests: 500
