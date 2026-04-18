@@ -135,3 +135,6 @@ audit.log
 audit.json
 .sandbox/
 sandbox_data/
+
+# Personal Claude Code overrides
+.claude/settings.local.json
